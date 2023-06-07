@@ -36,23 +36,20 @@ module Typer = struct												(* For type inference *)
 									T_Arrow { t_param = t_param; t_term = t_term }
 				end
 			| App { func; arg } -> 							(* cf. Sequent 4 *)
-				begin
-				let t_func = infer_type env func in
+				begin let t_func = infer_type env func in
 				let t_arg = infer_type env arg in
 					match t_func with
 						| T_Int -> failwith "[Type error] : T_Int is not a valid function type"
 						| T_Arrow { t_param; t_term } when Type.equal t_param t_arg -> t_term
 						| _ -> failwith "[Type error] : this application type is not a valid function type"
+				end
+			| Ty_Abs { param; term } -> let t_ret = infer_type env term in T_Forall { t_param=param; t_ret=t_ret }
+			| Ty_App { func; arg } -> begin
+				let t_func = infer_type env func in
+					match t_func with
+						| T_Forall { t_param; t_ret } -> subst t_ret t_param arg
+						| _ -> failwith "[Type error] : this application type is not a valid function type"
 				end;;
-
-	let print_type (t : t_expr) : unit = 
-		let rec aux (t : t_expr) : unit = 
-			match t with
-				| T_Int -> Printf.printf "int"
-				| T_Var t -> Printf.printf "%s" t
-				| T_Arrow { t_param=t1; t_term=T_Arrow { t_param=t2; t_term=t3 } } -> aux t1; Printf.printf " -> ("; aux (T_Arrow { t_param=t2; t_term=t3 }); Printf.printf ")";
-				| T_Arrow { t_param=t1; t_term=t2 } -> aux t1; Printf.printf " -> "; aux t2; Printf.printf ""
-	in aux t; Printf.printf "\n";;
 
 	let infer (filename : string) (def : string) : t_expr =
 		let file = Utils.read_file filename in
@@ -67,4 +64,24 @@ module Typer = struct												(* For type inference *)
 						  Env.add k t_expr (add_def_to_context t context) in
 		let context = Env.empty |> add_def_to_context defs_keys in
 		infer_type context (Dic.find defs_dic def);;
+
+	let infer_print (filename : string) (def : string) : unit =
+		print_type (infer filename def);;
+
+	let infer_with_context (filename : string) (def : string) (context : Type.t_expr Env.t) : t_expr =
+		let file = Utils.read_file filename in
+		let tokenized_defs = tokenize file in
+		let defs_dic = parse tokenized_defs in
+		let defs_keys = Dic.get_keys defs_dic in
+		let rec add_def_to_context (keys : string list) (context : Type.t_expr Env.t) : Type.t_expr Env.t =
+			match keys with
+				| [] -> context
+				| k::_ when k=def -> context
+				| k::t -> let t_expr = infer_type context (Dic.find defs_dic k) in
+						  Env.add k t_expr (add_def_to_context t context) in
+		let context = add_def_to_context defs_keys context in
+		infer_type context (Dic.find defs_dic def);;
+
+	let infer_print_with_context (filename : string) (def : string) (context : Type.t_expr Env.t) : unit =
+		print_type (infer_with_context filename def context);;
 end;;
